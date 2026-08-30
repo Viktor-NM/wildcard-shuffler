@@ -41,6 +41,13 @@ import "../styles/global.css"
       </div>
     </div> 
 
+		<div
+			id="https-warning"
+			class="hidden fixed bottom-6 px-4 py-2 bg-yellow-amber text-black-onyx text-xs rounded-full font-semibold shadow-lg text-center max-w-[90vw] z-50 animate-pulse pointer-events-none"
+		>
+			⚠️ En iOS Safari, el giroscopio requiere HTTPS para funcionar
+		</div>
+
 		<script>
 			import confetti from "canvas-confetti";
 			import { pickRandomAction } from "../utils/wildcard";
@@ -84,7 +91,9 @@ import "../styles/global.css"
 						rafId = requestAnimationFrame(render);
 					}
 
-					card.style.transform = `rotateX(${currentX.toFixed(3)}deg) rotateY(${currentY.toFixed(3)}deg)`;
+					const transform = `rotateX(${currentX.toFixed(3)}deg) rotateY(${currentY.toFixed(3)}deg)`;
+					card.style.transform = transform;
+					(card.style as any).webkitTransform = transform;
 				}
 
 				function start() {
@@ -125,18 +134,86 @@ import "../styles/global.css"
 			}
 
 			function initGyro() {
-				if (!("DeviceOrientationEvent" in window)) return;
+				if (typeof window === "undefined" || !("DeviceOrientationEvent" in window)) return;
 
-				if (typeof (DeviceOrientationEvent as any).requestPermission === "function")
-					return;
+				if (!window.isSecureContext && /iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+					const warning = document.getElementById("https-warning");
+					if (warning) warning.classList.remove("hidden");
+				}
 
-				window.addEventListener(
-					"deviceorientation",
-					(e) => {
+				let isListening = false;
+				let cleanupListeners: (() => void) | null = null;
+
+				const startListening = () => {
+					if (isListening) return;
+					isListening = true;
+
+					const onOrientation = (e: DeviceOrientationEvent) => {
+						if (e.beta !== null || e.gamma !== null) {
+							try {
+								localStorage.setItem("gyro_permission_granted", "true");
+							} catch {}
+							if (cleanupListeners) cleanupListeners();
+						}
 						for (const fn of gyroSubscribers) fn(e);
-					},
-					{ passive: true }
-				);
+					};
+
+					window.addEventListener("deviceorientation", onOrientation, { passive: true });
+				};
+
+				const doe = window.DeviceOrientationEvent as any;
+				const hasRequestPermission = doe && typeof doe.requestPermission === "function";
+
+				const wasGranted = (() => {
+					try {
+						return localStorage.getItem("gyro_permission_granted") === "true";
+					} catch {
+						return false;
+					}
+				})();
+
+				if (navigator.permissions && typeof navigator.permissions.query === "function") {
+					navigator.permissions
+						.query({ name: "accelerometer" as any })
+						.then((status) => {
+							if (status.state === "granted") startListening();
+						})
+						.catch(() => {});
+				}
+
+				if (wasGranted || !hasRequestPermission) {
+					startListening();
+				}
+
+				if (hasRequestPermission) {
+					const handleUserGesture = () => {
+						doe.requestPermission()
+							.then((state: string) => {
+								if (state === "granted") {
+									try {
+										localStorage.setItem("gyro_permission_granted", "true");
+									} catch {}
+									startListening();
+									if (cleanupListeners) cleanupListeners();
+								}
+							})
+							.catch((err: unknown) => {
+								console.warn("DeviceOrientation permission error:", err);
+							});
+					};
+
+					cleanupListeners = () => {
+						window.removeEventListener("click", handleUserGesture);
+						window.removeEventListener("touchend", handleUserGesture);
+						document.removeEventListener("click", handleUserGesture);
+						document.removeEventListener("touchend", handleUserGesture);
+					};
+
+					window.addEventListener("click", handleUserGesture);
+					window.addEventListener("touchend", handleUserGesture);
+					document.addEventListener("click", handleUserGesture);
+					document.addEventListener("touchend", handleUserGesture);
+				}
 			}
 
 			const DISC_ANGLE = (35 * Math.PI) / 180;
