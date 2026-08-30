@@ -1,0 +1,246 @@
+---
+import "../styles/global.css"
+---
+
+<html lang="es">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>Wildcard Shuffler</title>
+		<meta name="description" content="Generador de reglas caseras para el comodín: baraja y muestra la acción que toca cumplir. Proyecto no oficial, sin afiliación con Mattel." />
+	</head>
+	<body class="flex items-center justify-center perspective-distant overflow-hidden">
+		<div
+			class="w-[min(75vw,56dvh)] aspect-3/4.5 bg-white-smoke p-5 rounded-3xl transform-3d will-change-transform"
+			data-role="card"
+		>
+      <div class="size-full bg-black-onyx rounded-[28px] overflow-hidden relative flex items-center justify-center">
+        <div class="overflow-hidden grid grid-cols-2 w-1/5 aspect-3/4 top-8 left-10 rounded-[50%] skew-x-[-24deg] border-white-smoke bg-black-onyx absolute border-6 ">
+          <div class="size-full bg-red-tomato"></div>
+          <div class="size-full bg-blue-crayola"></div>
+          <div class="size-full bg-yellow-amber"></div>
+          <div class="size-full bg-green-jade"></div> 
+        </div>
+        <div class="overflow-hidden grid grid-cols-2 w-1/5 aspect-3/4 bottom-8 right-10 rounded-[50%] skew-x-[-24deg] border-white-smoke bg-black-onyx absolute border-6 ">
+          <div class="size-full bg-green-jade"></div> 
+          <div class="size-full bg-yellow-amber"></div>
+          <div class="size-full bg-blue-crayola"></div>
+          <div class="size-full bg-red-tomato"></div>
+        </div>
+        <div
+          id="disc"
+          class="h-full flex items-center justify-center bg-white-smoke w-[80%] rotate-35 rounded-[50%] @container-size"
+        >
+          <p
+            id="text"
+            class="-rotate-35 text-center text-balance leading-tight font-bold text-black-onyx wrap-break-word"
+          ></p>
+        </div>
+      </div>
+    </div> 
+
+		<script>
+			import confetti from "canvas-confetti";
+			import { pickRandomAction } from "../utils/wildcard";
+
+			const MAX_TILT_MOUSE = 10;
+			const MAX_TILT_GYRO = 12;
+			const GYRO_RANGE = 30;
+			const LERP = 0.12;
+			const SETTLE = 0.01;
+
+			const clamp = (v: number, min: number, max: number) =>
+				Math.min(Math.max(v, min), max);
+
+			const reduceMotion = window.matchMedia(
+				"(prefers-reduced-motion: reduce)"
+			).matches;
+
+			const hasHover = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+
+			const gyroSubscribers: Array<(e: DeviceOrientationEvent) => void> = [];
+
+			function setupTilt(card: HTMLElement) {
+				let targetX = 0,
+					targetY = 0;
+				let currentX = 0,
+					currentY = 0;
+				let rafId: number | null = null;
+
+				function render() {
+					currentX += (targetX - currentX) * LERP;
+					currentY += (targetY - currentY) * LERP;
+
+					if (
+						Math.abs(targetX - currentX) < SETTLE &&
+						Math.abs(targetY - currentY) < SETTLE
+					) {
+						currentX = targetX;
+						currentY = targetY;
+						rafId = null;
+					} else {
+						rafId = requestAnimationFrame(render);
+					}
+
+					card.style.transform = `rotateX(${currentX.toFixed(3)}deg) rotateY(${currentY.toFixed(3)}deg)`;
+				}
+
+				function start() {
+					if (rafId === null) rafId = requestAnimationFrame(render);
+				}
+
+				if (hasHover) {
+					card.addEventListener("mousemove", (e) => {
+						const rect = card.getBoundingClientRect();
+						const px = (e.clientX - rect.left) / rect.width - 0.5;
+						const py = (e.clientY - rect.top) / rect.height - 0.5;
+
+						targetY = px * 2 * MAX_TILT_MOUSE;
+						targetX = -py * 2 * MAX_TILT_MOUSE;
+						start();
+					});
+
+					card.addEventListener("mouseleave", () => {
+						targetX = 0;
+						targetY = 0;
+						start();
+					});
+				}
+
+				let betaBase: number | null = null;
+
+				gyroSubscribers.push((e) => {
+					if (e.beta === null || e.gamma === null) return;
+					if (betaBase === null) betaBase = e.beta;
+
+					const dBeta = clamp(e.beta - betaBase, -GYRO_RANGE, GYRO_RANGE);
+					const dGamma = clamp(e.gamma, -GYRO_RANGE, GYRO_RANGE);
+
+					targetX = -(dBeta / GYRO_RANGE) * MAX_TILT_GYRO;
+					targetY = (dGamma / GYRO_RANGE) * MAX_TILT_GYRO;
+					start();
+				});
+			}
+
+			function initGyro() {
+				if (!("DeviceOrientationEvent" in window)) return;
+
+				if (typeof (DeviceOrientationEvent as any).requestPermission === "function")
+					return;
+
+				window.addEventListener(
+					"deviceorientation",
+					(e) => {
+						for (const fn of gyroSubscribers) fn(e);
+					},
+					{ passive: true }
+				);
+			}
+
+			const DISC_ANGLE = (35 * Math.PI) / 180;
+			const DISC_SAFETY = 0.94;
+			const MAX_WIDTH_RATIO = 0.7;
+			const MIN_FONT = 8;
+			const MAX_FONT = 240;
+
+			function fitTextToDisc(disc: HTMLElement, text: HTMLElement) {
+				const A = (disc.offsetWidth / 2) * DISC_SAFETY;
+				const B = (disc.offsetHeight / 2) * DISC_SAFETY;
+				if (A === 0 || B === 0) return;
+
+				const cos = Math.cos(DISC_ANGLE);
+				const sin = Math.sin(DISC_ANGLE);
+
+				text.style.width = "fit-content";
+				text.style.maxWidth = `${disc.offsetWidth * MAX_WIDTH_RATIO}px`;
+
+				const fits = (size: number) => {
+					text.style.fontSize = `${size}px`;
+					const a = text.offsetWidth / 2;
+					const b = text.offsetHeight / 2;
+
+					for (const [x, y] of [
+						[a, b],
+						[a, -b],
+					]) {
+						const u = x * cos + y * sin;
+						const v = -x * sin + y * cos;
+						if ((u / A) ** 2 + (v / B) ** 2 > 1) return false;
+					}
+					return true;
+				};
+
+				let lo = MIN_FONT;
+				let hi = Math.min(MAX_FONT, B * 2);
+				for (let i = 0; i < 20; i++) {
+					const mid = (lo + hi) / 2;
+					if (fits(mid)) lo = mid;
+					else hi = mid;
+				}
+				text.style.fontSize = `${lo}px`;
+			}
+
+			function setupTextFit() {
+				const disc = document.getElementById("disc");
+				const text = document.getElementById("text");
+				if (!disc || !text) return;
+
+				let rafId: number | null = null;
+				const schedule = () => {
+					if (rafId !== null) return;
+					rafId = requestAnimationFrame(() => {
+						rafId = null;
+						fitTextToDisc(disc, text);
+					});
+				};
+
+				schedule();
+				document.fonts?.ready.then(schedule);
+				new ResizeObserver(schedule).observe(disc);
+			}
+
+			const CONFETTI_COLORS = ["#e8342a", "#2f6ef0", "#f2b705", "#22a844", "#f5f5f5"];
+
+			function fireConfetti() {
+				const card = document.querySelector<HTMLElement>('[data-role="card"]');
+				const rect = card?.getBoundingClientRect();
+
+				const cx = rect ? (rect.left + rect.width / 2) / window.innerWidth : 0.5;
+				const cy = rect ? (rect.top + rect.height / 2) / window.innerHeight : 0.5;
+
+				const base = {
+					colors: CONFETTI_COLORS,
+					particleCount: 90,
+					spread: 70,
+					startVelocity: 45,
+					scalar: 0.9,
+					ticks: 220,
+					disableForReducedMotion: true,
+				};
+
+				confetti({ ...base, angle: 60, origin: { x: cx - 0.12, y: cy } });
+				confetti({ ...base, angle: 120, origin: { x: cx + 0.12, y: cy } });
+			}
+
+			const action = pickRandomAction();
+
+			const textEl = document.getElementById("text");
+			if (textEl) textEl.textContent = action.text;
+
+			setupTextFit();
+
+			if (action.mercy) {
+				requestAnimationFrame(fireConfetti);
+			}
+
+			if (!reduceMotion) {
+				document
+					.querySelectorAll<HTMLElement>('[data-role="card"]')
+					.forEach(setupTilt);
+				initGyro();
+			}
+		</script>
+	</body>
+</html>

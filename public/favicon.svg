@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <clipPath id="disc">
+      <ellipse cx="32" cy="32" rx="14" ry="24" transform="rotate(35 32 32)"/>
+    </clipPath>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0d0d0d"/>
+  <rect x="4" y="4" width="56" height="56" rx="11" fill="#f4f4f4"/>
+  <rect x="7" y="7" width="50" height="50" rx="8.5" fill="#0d0d0d"/>
+  <g clip-path="url(#disc)">
+    <rect x="0" y="0" width="32" height="32" fill="#e5342b"/>
+    <rect x="32" y="0" width="32" height="32" fill="#1f52e0"/>
+    <rect x="0" y="32" width="32" height="32" fill="#efa800"/>
+    <rect x="32" y="32" width="32" height="32" fill="#00a340"/>
+  </g>
+  <ellipse cx="32" cy="32" rx="14" ry="24" transform="rotate(35 32 32)" fill="none" stroke="#f4f4f4" stroke-width="3"/>
+</svg>
